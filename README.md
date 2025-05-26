@@ -19,10 +19,10 @@ A simple and universal chat interface for interacting with local AI model server
 
 ### Installation
 
-1. Clone this repository (replace with the new repository URL once created):
+1. Clone this repository:
 
 ```bash
-git clone <your-chatboat-repository-url>
+git clone https://github.com/BTankut/ChatBoat.git
 cd chatboat
 ```
 
