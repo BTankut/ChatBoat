@@ -43,12 +43,26 @@ async function getAvailableModels(lmStudioUrl: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    const { messages, selectedModel } = await request.json();
-    console.log('Gelen mesajlar:', messages);
-    console.log('Seçilen model:', selectedModel);
+    // İstek gövdesinden mesajları, seçilen modeli ve sunucu URL'sini al
+    const { messages, selectedModel, serverUrl } = await request.json();
 
-    // LM Studio Server URL'si
-    const lmStudioUrl = process.env.LM_STUDIO_URL || 'http://192.168.1.183:1234';
+    // Mesajları kontrol et
+    if (!messages || !Array.isArray(messages)) {
+      throw new Error('Geçerli mesaj dizisi gerekli');
+    }
+
+    // Seçilen modeli kontrol et
+    if (!selectedModel) {
+      throw new Error('Lütfen bir model seçin.');
+    }
+    
+    // Sunucu URL'sini kontrol et
+    if (!serverUrl) {
+      throw new Error('Sunucu URL\'si belirtilmedi');
+    }
+
+    // Kullanıcının girdiği sunucu URL'sini kullan
+    const lmStudioUrl = serverUrl;
     console.log('LM Studio URL:', lmStudioUrl);
 
     if (!selectedModel) {

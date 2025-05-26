@@ -42,18 +42,45 @@ export default function Home() {
   const [modelError, setModelError] = useState<string>("");
   const [openThinkingIndices, setOpenThinkingIndices] = useState<number[]>([]);
   const [openStatsIndices, setOpenStatsIndices] = useState<number[]>([]);
+  
+  // Sunucu URL ayarları için state'ler
+  const [serverUrl, setServerUrl] = useState<string>("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [tempServerUrl, setTempServerUrl] = useState("");
 
-  // Modelleri yükle
+  // localStorage'dan sunucu URL'sini yükle ve modelleri getir
   useEffect(() => {
-    const fetchModels = async () => {
+    const initializeApp = async () => {
+      // Önce localStorage'dan URL'yi al
+      let url = localStorage.getItem('lmStudioServerUrl');
+      if (!url) {
+        // Varsayılan URL
+        url = 'http://localhost:1234';
+        localStorage.setItem('lmStudioServerUrl', url);
+      }
+      
+      // State'leri güncelle
+      setServerUrl(url);
+      setTempServerUrl(url);
+      
+      // Modelleri yükle
       try {
         setIsLoadingModels(true);
         setModelError("");
         
-        const response = await fetch("/api/models");
+        console.log('Modelleri yükleme isteği gönderiliyor, URL:', url);
+        
+        const response = await fetch("/api/models", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ serverUrl: url })
+        });
         
         if (!response.ok) {
-          throw new Error(`Model listesi alınamadı: ${response.status}`);
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Model listesi alınamadı: ${response.status}`);
         }
         
         const data = await response.json() as ModelsResponse;
@@ -65,14 +92,23 @@ export default function Home() {
         }
       } catch (error: any) {
         console.error("Modeller yüklenirken hata:", error);
-        setModelError(`Modeller yüklenirken hata oluştu: ${error.message}`);
+        setModelError(error.message || "Modeller yüklenemedi");
+        setModels([]);
       } finally {
         setIsLoadingModels(false);
       }
     };
-    
-    fetchModels();
-  }, []);
+
+    initializeApp();
+  }, []);  // Sadece bir kez çalıştır
+  
+  // Sunucu URL'si değiştiğinde modelleri yeniden yükle
+  useEffect(() => {
+    // İlk yüklemede çalışmaması için kontrol
+    if (serverUrl && serverUrl !== localStorage.getItem('lmStudioServerUrl')) {
+      refreshModels();
+    }
+  }, [serverUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +152,7 @@ export default function Home() {
             content: msg.content,
           })),
           selectedModel: selectedModel, // Seçilen modeli gönder
+          serverUrl: serverUrl, // Sunucu URL'sini gönder
         }),
       });
 
@@ -227,18 +264,110 @@ export default function Home() {
     }
   };
 
+  // Ayarları kaydetme fonksiyonu
+  const saveSettings = () => {
+    setServerUrl(tempServerUrl);
+    localStorage.setItem('lmStudioServerUrl', tempServerUrl);
+    setIsSettingsOpen(false);
+  };
+
+  // Modelleri yeniden yükleme fonksiyonu
+  const refreshModels = async () => {
+    try {
+      // Önce state'leri sıfırla
+      setIsLoadingModels(true);
+      setModelError("");
+      setModels([]);
+      setSelectedModel("");
+      
+      console.log('Modelleri yeniden yükleme isteği gönderiliyor, URL:', serverUrl);
+      
+      try {
+        const response = await fetch("/api/models", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ serverUrl })
+        });
+        
+        console.log('API yanıtı alındı, durum kodu:', response.status);
+        
+        // Yanıtı JSON olarak çözmeyi dene
+        const responseText = await response.text();
+        console.log('API yanıt metni:', responseText);
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('JSON ayrıştırma hatası:', parseError);
+          throw new Error(`Yanıt JSON olarak ayrıştırılamadı: ${responseText}`);
+        }
+        
+        if (!response.ok) {
+          throw new Error(data.error || `Model listesi alınamadı: ${response.status}`);
+        }
+        
+        if (!data.data || !Array.isArray(data.data)) {
+          console.error('Beklenmeyen API yanıt formatı:', data);
+          throw new Error('API yanıtı beklenen formatta değil');
+        }
+        
+        setModels(data.data);
+        
+        // Eğer model varsa ilkini seç
+        if (data.data && data.data.length > 0) {
+          setSelectedModel(data.data[0].id);
+        }
+      } catch (fetchError: any) {
+        // Ağ hatası veya bağlantı hatası durumunda
+        if (fetchError.name === 'TypeError' || fetchError.message.includes('fetch failed')) {
+          throw new Error(`LM Studio Server'a bağlanılamadı. Lütfen sunucunun çalıştığından ve URL'nin doğru olduğundan emin olun: ${serverUrl}`);
+        }
+        throw fetchError;
+      }
+    } catch (error: any) {
+      console.error("Modeller yüklenirken hata:", error);
+      setModelError(error.message || "Modeller yüklenemedi");
+      setModels([]);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
       <header className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">LM Studio Chat</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold">LM Studio Chat</h1>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="Ayarlar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
           
           {/* Model seçimi */}
           <div className="w-full sm:w-auto">
             {isLoadingModels ? (
               <div className="text-sm text-gray-500 dark:text-gray-400">Modeller yükleniyor...</div>
             ) : modelError ? (
-              <div className="text-sm text-red-500">{modelError}</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm text-red-500">{modelError}</div>
+                <button 
+                  onClick={refreshModels}
+                  className="p-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
+                >
+                  Yenile
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-2">
                 <label htmlFor="model-select" className="text-sm font-medium">
@@ -266,6 +395,59 @@ export default function Home() {
           </div>
         </div>
       </header>
+      
+      {/* Ayarlar Modalı */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Sunucu Ayarları</h2>
+              <button 
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <label htmlFor="server-url" className="block text-sm font-medium mb-1">
+                LM Studio Server URL
+              </label>
+              <input
+                id="server-url"
+                type="text"
+                value={tempServerUrl}
+                onChange={(e) => setTempServerUrl(e.target.value)}
+                placeholder="http://localhost:1234"
+                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                LM Studio Server'ın çalıştığı IP adresi ve port numarasını girin.
+                <br />
+                Örnek: http://192.168.1.100:1234
+              </p>
+            </div>
+            
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                İptal
+              </button>
+              <button
+                onClick={saveSettings}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              >
+                Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-auto p-4">
         <div className="max-w-3xl mx-auto space-y-4">

@@ -11,10 +11,20 @@ interface ModelsResponse {
   object: string;
 }
 
-export async function GET() {
+export async function POST(request: Request) {
   try {
+    // İstek gövdesinden sunucu URL'sini al
+    const body = await request.json();
+    console.log('Alınan istek gövdesi:', body);
+    
+    const { serverUrl } = body;
+    
+    if (!serverUrl) {
+      throw new Error('Sunucu URL\'si belirtilmedi');
+    }
+    
     // LM Studio Server URL'si
-    const lmStudioUrl = process.env.LM_STUDIO_URL || 'http://192.168.1.183:1234';
+    const lmStudioUrl = serverUrl;
     console.log('LM Studio URL:', lmStudioUrl);
 
     const response = await fetch(`${lmStudioUrl}/v1/models`, {
@@ -37,13 +47,26 @@ export async function GET() {
     
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error('Model listesi alınırken hata:', error);
+    console.error('LM Studio API hatası:', error);
+    console.error('Hata detayları:', JSON.stringify(error, null, 2));
+    
+    // Daha detaylı hata mesajı oluştur
+    let errorMessage = 'LM Studio API hatası';
+    
+    if (error.message) {
+      errorMessage += `: ${error.message}`;
+    }
+    
+    if (error.cause) {
+      errorMessage += ` (Neden: ${error.cause})`;
+    }
+    
+    if (error.code) {
+      errorMessage += ` [Kod: ${error.code}]`;
+    }
     
     return NextResponse.json(
-      { 
-        error: 'Model listesi alınırken bir hata oluştu',
-        details: error.message 
-      },
+      { error: errorMessage },
       { status: 500 }
     );
   }
