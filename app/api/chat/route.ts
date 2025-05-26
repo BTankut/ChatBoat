@@ -110,14 +110,15 @@ export async function POST(request: Request) {
           return;
         }
 
-        let isThinking = false;
+        let isInsideThinkingBlock = false;
         let buffer = '';
         let completeResponse = '';
         
         // İstatistikler için değişkenler
         const stats = {
           startTime: Date.now(),
-          firstTokenTime: 0,
+          firstTokenTime: 0, // Time of any first token
+          firstResponseTokenTime: 0, // Time of the first actual response token
           endTime: 0,
           thinkingStartTime: 0,
           thinkingEndTime: 0,
@@ -162,56 +163,60 @@ export async function POST(request: Request) {
                 
                 try {
                   const json = JSON.parse(data);
-                  let content = json.choices[0]?.delta?.content || '';
+                  let contentChunk = json.choices[0]?.delta?.content || '';
                   
                   // Stop reason kontrolü
                   if (json.choices[0]?.finish_reason) {
                     stats.stopReason = json.choices[0].finish_reason;
                   }
                   
-                  if (content) {
-                    // İlk token zamanını kaydet
+                  if (contentChunk) {
+                    // İlk genel token zamanını kaydet
                     if (stats.totalTokens === 0) {
                       stats.firstTokenTime = Date.now();
                     }
-                    
-                    completeResponse += content;
                     stats.totalTokens++;
-                    
-                    // <think> etiketlerini işle
-                    if (content.includes('<think>')) {
-                      isThinking = true;
-                      // Düşünme başlangıç zamanını kaydet
-                      if (stats.thinkingStartTime === 0) {
+                    completeResponse += contentChunk;
+
+                    // Token tipini belirle ve sayaçları güncelle
+                    // isInsideThinkingBlock, bir önceki chunk'tan gelen durumu yansıtır.
+                    let chunkIsCurrentlyConsideredThinking = isInsideThinkingBlock;
+
+                    if (contentChunk.includes('<think>')) {
+                      if (!isInsideThinkingBlock) { // Yeni bir düşünme bloğu başlıyor
                         stats.thinkingStartTime = Date.now();
                       }
-                      // </think> etiketini içerikten temizle
-                      content = content.replace('</think>', '');
+                      isInsideThinkingBlock = true;
+                      chunkIsCurrentlyConsideredThinking = true; // Bu chunk kesinlikle düşünme ile ilgili
                     }
-                    
-                    if (content.includes('</think>')) {
-                      isThinking = false;
-                      // Düşünme bitiş zamanını kaydet
-                      stats.thinkingEndTime = Date.now();
-                      // </think> etiketini içerikten temizle
-                      content = content.replace('</think>', '');
-                    }
-                    
-                    // <think> etiketini içerikten temizle
-                    content = content.replace('<think>', '');
-                    
-                    // Token sayısını güncelle
-                    if (isThinking) {
+
+                    if (chunkIsCurrentlyConsideredThinking) {
                       stats.thinkingTokens++;
                     } else {
                       stats.responseTokens++;
+                      if (stats.firstResponseTokenTime === 0) {
+                        stats.firstResponseTokenTime = Date.now();
+                      }
+                    }
+
+                    if (contentChunk.includes('</think>')) {
+                      if (isInsideThinkingBlock) { // Düşünme bloğu bitiyor
+                        stats.thinkingEndTime = Date.now();
+                      }
+                      isInsideThinkingBlock = false;
+                      // Eğer chunk </think> ile bitiyorsa ve düşünme olarak işaretlenmediyse,
+                      // bir sonraki chunk kesinlikle response olacak.
                     }
                     
-                    // Düşünme modu dışındaki içeriği gönder
-                    controller.enqueue(encoder.encode(JSON.stringify({ 
-                      content,
-                      isThinking,
-                      stats
+                    // Frontend'e gönderilecek içeriği temizle
+                    const cleanedContent = contentChunk.replace(/<think>|<\/think>/g, '');
+                    
+                    // İstatistikleri ve içeriği gönder
+                    controller.enqueue(encoder.encode(JSON.stringify({
+                      content: cleanedContent,
+                      isThinking: chunkIsCurrentlyConsideredThinking, // Bu chunk'ın düşünme durumu
+                      stats,
+                      completed: false
                     }) + '\n'));
                   }
                 } catch (e) {

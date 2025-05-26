@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 interface Stats {
   startTime: number;
   firstTokenTime: number;
+  firstResponseTokenTime?: number;
   endTime: number;
   thinkingStartTime: number;
   thinkingEndTime: number;
@@ -561,13 +562,19 @@ export default function Home() {
                         <li>Thinking Time: {((message.stats.thinkingEndTime - message.stats.thinkingStartTime) / 1000).toFixed(2)} seconds</li>
                       )}
                       {message.stats.thinkingTokens > 0 && <li>Thinking Tokens: {message.stats.thinkingTokens}</li>}
-                      <li>Response Tokens: {message.stats.responseTokens}</li>
-                      <li>Total Tokens: {message.stats.totalTokens}</li>
-                      {message.stats.endTime > message.stats.firstTokenTime && message.stats.responseTokens > 1 && (
-                        <li>Token Speed: {((message.stats.responseTokens -1) / ((message.stats.endTime - message.stats.firstTokenTime) / 1000)).toFixed(2)} tokens/second</li>
+                      <li>Response Time: {message.stats.endTime > (message.stats.firstResponseTokenTime || message.stats.firstTokenTime) ? ((message.stats.endTime - (message.stats.firstResponseTokenTime || message.stats.firstTokenTime)) / 1000).toFixed(2) : (0).toFixed(2)} seconds ({message.stats.responseTokens} tokens)</li>
+                      {message.stats.responseTokens > 1 && (message.stats.firstResponseTokenTime && message.stats.firstResponseTokenTime > 0 ? message.stats.endTime > message.stats.firstResponseTokenTime : message.stats.endTime > message.stats.firstTokenTime) && (
+                        <li>Token Speed: {
+                          (() => {
+                            const firstEffectiveTokenTime = message.stats.firstResponseTokenTime && message.stats.firstResponseTokenTime > 0 ? message.stats.firstResponseTokenTime : message.stats.firstTokenTime;
+                            if (message.stats.endTime > firstEffectiveTokenTime && message.stats.responseTokens > 1) {
+                              return ((message.stats.responseTokens -1) / ((message.stats.endTime - firstEffectiveTokenTime) / 1000)).toFixed(2) + " tokens/second";
+                            }                          
+                            return "N/A";
+                          })()
+                        }</li>
                       )}
-                      <li>Time to First Token: {((message.stats.firstTokenTime - message.stats.startTime) / 1000).toFixed(2)} seconds</li>
-                      <li>Total Duration: {((message.stats.endTime - message.stats.startTime) / 1000).toFixed(2)} seconds</li>
+                      <li>Total Time: {((message.stats.endTime - message.stats.startTime) / 1000).toFixed(2)} seconds ({message.stats.totalTokens} tokens)</li>
                       {message.stats.stopReason && <li>Stop Reason: {message.stats.stopReason}</li>}
                     </ul>
                   </div>
