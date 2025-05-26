@@ -17,8 +17,8 @@ interface Stats {
 interface Message {
   role: "user" | "assistant";
   content: string;
-  thinking?: string; // Düşünme içeriği için
-  stats?: Stats; // İstatistikler
+  thinking?: string; // For thinking content
+  stats?: Stats; // Statistics
 }
 
 interface Model {
@@ -43,15 +43,15 @@ export default function Home() {
   const [openThinkingIndices, setOpenThinkingIndices] = useState<number[]>([]);
   const [openStatsIndices, setOpenStatsIndices] = useState<number[]>([]);
   
-  // Sunucu URL ayarları için state'ler
+  // State for server URL settings
   const [serverUrl, setServerUrl] = useState<string>("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tempServerUrl, setTempServerUrl] = useState("");
 
-  // localStorage'dan sunucu URL'sini yükle ve modelleri getir
+  // Load server URL from localStorage and fetch models
   useEffect(() => {
     const initializeApp = async () => {
-      let storedUrl = localStorage.getItem('lmStudioServerUrl');
+      let storedUrl = localStorage.getItem('aiServerUrl');
       
       if (storedUrl && storedUrl.trim() !== "") { // A non-empty URL is stored, use it
         setServerUrl(storedUrl);
@@ -60,7 +60,7 @@ export default function Home() {
         try {
           setIsLoadingModels(true);
           setModelError("");
-          console.log('Modelleri yükleme isteği gönderiliyor, URL:', storedUrl);
+          console.log('Fetching models, URL:', storedUrl);
           
           const response = await fetch("/api/models", {
             method: "POST",
@@ -70,9 +70,9 @@ export default function Home() {
           
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({})); // Handle non-JSON error response
-            let errorMessage = `Model listesi alınamadı (HTTP ${response.status})`;
+            let errorMessage = `Failed to fetch model list (HTTP ${response.status})`;
             if (response.status === 0 || response.status === 503 || response.status === 504) { // Common for network errors / server down
-                 errorMessage = `Sunucuya ulaşılamadı: ${storedUrl}. Lütfen sunucu adresini kontrol edin ve LM Studio'nun çalıştığından emin olun.`;
+                 errorMessage = `Could not connect to server: ${storedUrl}. Please check the server address and ensure your AI server is running.`;
             } else if (errorData.error) {
                 errorMessage = errorData.error;
             } else if (typeof errorData === 'string') {
@@ -88,35 +88,33 @@ export default function Home() {
           } else {
             setModels([]);
             setSelectedModel("");
-            setModelError("Sunucuda kullanılabilir model bulunamadı veya model listesi boş. Lütfen LM Studio sunucunuzu kontrol edin.");
+            setModelError("No available models found on the server or the model list is empty. Please check your AI server.");
           }
         } catch (error: any) {
-          console.error("Modeller yüklenirken hata:", error);
-          setModelError(error.message || "Modeller yüklenirken bilinmeyen bir hata oluştu. Sunucu adresini ve bağlantınızı kontrol edin.");
+          console.error("Error loading models:", error);
+          setModelError(error.message || "Models could not be loaded");
           setModels([]);
           setSelectedModel("");
         } finally {
           setIsLoadingModels(false);
         }
       } else { // No URL stored in localStorage or it's empty
-        setModelError("LM Studio sunucu adresi ayarlanmamış. Lütfen yukarıdaki dişli ikonuna tıklayarak ayarlayın.");
+        setModelError("Server URL is not set. Please click the gear icon above to configure it.");
         setServerUrl(""); 
         setTempServerUrl("http://localhost:1234"); // Pre-fill settings modal with default
         setModels([]);
         setSelectedModel("");
         setIsLoadingModels(false);
-        // Optionally open settings modal automatically on first load without URL
-        // setIsSettingsOpen(true); // Consider UX for this. A message might be less intrusive.
       }
     };
 
     initializeApp();
-  }, []);  // Sadece bir kez çalıştır
+  }, []);  // Run only once
   
-  // Sunucu URL'si değiştiğinde modelleri yeniden yükle
+  // Reload models when server URL changes
   useEffect(() => {
-    // İlk yüklemede çalışmaması için kontrol
-    if (serverUrl && serverUrl !== localStorage.getItem('lmStudioServerUrl')) {
+    // Check to prevent running on initial load
+    if (serverUrl && serverUrl !== localStorage.getItem('aiServerUrl')) {
       refreshModels();
     }
   }, [serverUrl]);
@@ -125,20 +123,20 @@ export default function Home() {
     e.preventDefault();
     if (!input.trim()) return;
     
-    // Model seçilmemişse uyarı göster
+    // Show warning if no model is selected
     if (!selectedModel) {
-      alert("Lütfen bir model seçin!");
+      alert("Please select a model!");
       return;
     }
 
-    // Kullanıcı mesajını ekle
+    // Add user message
     const userMessage: Message = { role: "user", content: input };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
 
-    // Boş asistan mesajı ekle (streaming için)
+    // Add empty assistant message (for streaming)
     const assistantMessage: Message = {
       role: "assistant",
       content: "",
@@ -147,11 +145,11 @@ export default function Home() {
     const newMessageIndex = updatedMessages.length;
     setMessages([...updatedMessages, assistantMessage]);
     
-    // Yeni mesaj için istatistik penceresini varsayılan olarak aç
+    // Open stats window by default for new message
     setOpenStatsIndices(prev => [...prev, newMessageIndex]);
 
     try {
-      // API'ye istek gönder
+      // Send request to API
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -162,35 +160,35 @@ export default function Home() {
             role: msg.role,
             content: msg.content,
           })),
-          selectedModel: selectedModel, // Seçilen modeli gönder
-          serverUrl: serverUrl, // Sunucu URL'sini gönder
+          selectedModel: selectedModel, // Send selected model
+          serverUrl: serverUrl, // Send server URL
         }),
       });
 
       if (!response.ok) {
-        throw new Error("API isteği başarısız oldu");
+        throw new Error("API request failed");
       }
 
-      // Stream yanıtı işle
+      // Process stream response
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
-        throw new Error("Yanıt okunamadı");
+        throw new Error("Could not read response");
       }
 
-      // Streaming yanıt için değişkenler
+      // Variables for streaming response
       let currentContent = "";
       let currentThinking = "";
       let isInThinkingMode = false;
-      let messageIndex = updatedMessages.length; // Asistan mesajının indeksi
+      let messageIndex = updatedMessages.length; // Index of assistant message
 
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          // Chunk'u metin olarak dönüştür
+          // Convert chunk to text
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n').filter(line => line.trim() !== '');
 
@@ -198,9 +196,9 @@ export default function Home() {
             try {
               const { content, isThinking, stats, completed } = JSON.parse(line);
               
-              // Yanıt tamamlandıysa işlem yapma
+              // Don't process if response is completed
               if (completed) {
-                // Son istatistikleri güncelle
+                // Update final statistics
                 setMessages(prev => {
                   const newMessages = [...prev];
                   const lastMessage = newMessages[newMessages.length - 1];
@@ -212,39 +210,39 @@ export default function Home() {
                 continue;
               }
               
-              // Düşünme modunu kontrol et
+              // Check thinking mode
               if (isThinking) {
                 isInThinkingMode = true;
-                // Düşünme modundayken düşünme penceresini aç
+                // Open thinking window when in thinking mode
                 if (!openThinkingIndices.includes(messageIndex)) {
                   setOpenThinkingIndices(prev => [...prev, messageIndex]);
                 }
               } else if (isInThinkingMode && !isThinking) {
-                // Düşünme modu bittiğinde düşünme penceresini kapat
+                // Close thinking window when thinking mode ends
                 isInThinkingMode = false;
                 setOpenThinkingIndices(prev => prev.filter(i => i !== messageIndex));
               }
               
-              // İçeriği uygun yere ekle
+              // Add content to the appropriate place
               if (isThinking || isInThinkingMode) {
-                // Düşünme içeriğini güncelle
+                // Update thinking content
                 currentThinking += content;
               } else {
-                // Normal içeriği güncelle
+                // Update normal content
                 currentContent += content;
               }
               
-              // Mesajları güncelle
+              // Update messages
               setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
                 if (lastMessage && lastMessage.role === "assistant") {
-                  // <think> etiketlerini temizle
+                  // Clean <think> tags
                   const cleanedThinking = currentThinking
                     .replace(/<think>/g, '')
                     .replace(/<\/think>/g, '');
                   
-                  // Asistan mesajını güncelle
+                  // Update assistant message
                   lastMessage.content = currentContent;
                   lastMessage.thinking = cleanedThinking;
                   lastMessage.stats = stats;
@@ -252,7 +250,7 @@ export default function Home() {
                 return newMessages;
               });
             } catch (e) {
-              console.error("Chunk işleme hatası:", e);
+              console.error("Chunk processing error:", e);
             }
           }
         }
@@ -260,13 +258,13 @@ export default function Home() {
         reader.releaseLock();
       }
     } catch (error) {
-      console.error("Hata:", error);
-      // Hata mesajını ekle
+      console.error("Error:", error);
+      // Add error message
       setMessages(prev => {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
-          lastMessage.content = "Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.";
+          lastMessage.content = "Sorry, an error occurred. Please try again.";
         }
         return newMessages;
       });
@@ -275,23 +273,23 @@ export default function Home() {
     }
   };
 
-  // Ayarları kaydetme fonksiyonu
+  // Save settings function
   const saveSettings = () => {
     setServerUrl(tempServerUrl);
-    localStorage.setItem('lmStudioServerUrl', tempServerUrl);
+    localStorage.setItem('aiServerUrl', tempServerUrl);
     setIsSettingsOpen(false);
   };
 
-  // Modelleri yeniden yükleme fonksiyonu
+  // Reload models function
   const refreshModels = async () => {
     try {
-      // Önce state'leri sıfırla
+      // Reset states first
       setIsLoadingModels(true);
       setModelError("");
       setModels([]);
       setSelectedModel("");
       
-      console.log('Modelleri yeniden yükleme isteği gönderiliyor, URL:', serverUrl);
+      console.log('Reloading models, URL:', serverUrl);
       
       try {
         const response = await fetch("/api/models", {
@@ -302,45 +300,45 @@ export default function Home() {
           body: JSON.stringify({ serverUrl })
         });
         
-        console.log('API yanıtı alındı, durum kodu:', response.status);
+        console.log('API response received, status code:', response.status);
         
-        // Yanıtı JSON olarak çözmeyi dene
+        // Try to parse response as JSON
         const responseText = await response.text();
-        console.log('API yanıt metni:', responseText);
+        console.log('API response text:', responseText);
         
         let data;
         try {
           data = JSON.parse(responseText);
         } catch (parseError) {
-          console.error('JSON ayrıştırma hatası:', parseError);
-          throw new Error(`Yanıt JSON olarak ayrıştırılamadı: ${responseText}`);
+          console.error('JSON parsing error:', parseError);
+          throw new Error(`Response could not be parsed as JSON: ${responseText}`);
         }
         
         if (!response.ok) {
-          throw new Error(data.error || `Model listesi alınamadı: ${response.status}`);
+          throw new Error(data.error || `Failed to fetch model list: ${response.status}`);
         }
         
         if (!data.data || !Array.isArray(data.data)) {
-          console.error('Beklenmeyen API yanıt formatı:', data);
-          throw new Error('API yanıtı beklenen formatta değil');
+          console.error('Unexpected API response format:', data);
+          throw new Error('API response is not in the expected format');
         }
         
         setModels(data.data);
         
-        // Eğer model varsa ilkini seç
+        // If models exist, select the first one
         if (data.data && data.data.length > 0) {
           setSelectedModel(data.data[0].id);
         }
       } catch (fetchError: any) {
-        // Ağ hatası veya bağlantı hatası durumunda
+        // In case of network error or connection error
         if (fetchError.name === 'TypeError' || fetchError.message.includes('fetch failed')) {
-          throw new Error(`LM Studio Server'a bağlanılamadı. Lütfen sunucunun çalıştığından ve URL'nin doğru olduğundan emin olun: ${serverUrl}`);
+          throw new Error(`Could not connect to the AI Server. Please ensure the server is running and the URL is correct: ${serverUrl}`);
         }
         throw fetchError;
       }
     } catch (error: any) {
-      console.error("Modeller yüklenirken hata:", error);
-      setModelError(error.message || "Modeller yüklenemedi");
+      console.error("Error loading models:", error);
+      setModelError(error.message || "Models could not be loaded");
       setModels([]);
     } finally {
       setIsLoadingModels(false);
@@ -352,11 +350,11 @@ export default function Home() {
       <header className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold">LM Studio Chat</h1>
+            <h1 className="text-xl font-bold">ChatBoat</h1>
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-              title="Ayarlar"
+              title="Settings"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -365,10 +363,10 @@ export default function Home() {
             </button>
           </div>
           
-          {/* Model seçimi */}
+          {/* Model Selection */}
           <div className="w-full sm:w-auto">
             {isLoadingModels ? (
-              <div className="text-sm text-gray-500 dark:text-gray-400">Modeller yükleniyor...</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Loading models...</div>
             ) : modelError ? (
               <div className="flex items-center gap-2">
                 <div className="text-sm text-red-500">{modelError}</div>
@@ -376,7 +374,7 @@ export default function Home() {
                   onClick={refreshModels}
                   className="p-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
                 >
-                  Yenile
+                  Refresh
                 </button>
               </div>
             ) : (
@@ -392,7 +390,7 @@ export default function Home() {
                   disabled={isLoading || models.length === 0}
                 >
                   {models.length === 0 ? (
-                    <option value="">Model bulunamadı</option>
+                    <option value="">No models found</option>
                   ) : (
                     models.map((model) => (
                       <option key={model.id} value={model.id}>
@@ -407,12 +405,12 @@ export default function Home() {
         </div>
       </header>
       
-      {/* Ayarlar Modalı */}
+      {/* Settings Modal */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Sunucu Ayarları</h2>
+              <h2 className="text-xl font-bold">Server Settings</h2>
               <button 
                 onClick={() => setIsSettingsOpen(false)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
@@ -425,7 +423,7 @@ export default function Home() {
             
             <div className="mb-4">
               <label htmlFor="server-url" className="block text-sm font-medium mb-1">
-                LM Studio Server URL
+                Server URL
               </label>
               <input
                 id="server-url"
@@ -436,9 +434,9 @@ export default function Home() {
                 className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
               <p className="text-xs text-gray-500 mt-1">
-                LM Studio Server'ın çalıştığı IP adresi ve port numarasını girin.
+                Enter the IP address and port of your AI model server.
                 <br />
-                Örnek: http://192.168.1.100:1234
+                Example: http://192.168.1.100:1234
               </p>
             </div>
             
@@ -447,13 +445,13 @@ export default function Home() {
                 onClick={() => setIsSettingsOpen(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
               >
-                İptal
+                Cancel
               </button>
               <button
                 onClick={saveSettings}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
               >
-                Kaydet
+                Save
               </button>
             </div>
           </div>
@@ -464,11 +462,11 @@ export default function Home() {
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.length === 0 ? (
             <div className="text-center text-gray-500 dark:text-gray-400 my-8">
-              <p>LM Studio Server ile sohbete başlayın!</p>
-              <p className="text-sm mt-2">Modelinize bir soru sorun veya bir görev verin.</p>
+              <p>Start chatting with your local AI server!</p>
+              <p className="text-sm mt-2">Ask your model a question or give it a task.</p>
               {models.length > 0 && (
                 <p className="text-sm mt-4 font-medium">
-                  Seçili model: <span className="text-blue-500">{selectedModel}</span>
+                  Selected model: <span className="text-blue-500">{selectedModel}</span>
                 </p>
               )}
             </div>
@@ -481,7 +479,7 @@ export default function Home() {
                 <p className="whitespace-pre-wrap">{message.content}</p>
                 
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {/* Düşünme içeriği varsa göster/gizle butonu */}
+                  {/* Show/hide button if thinking content exists */}
                   {message.thinking && message.thinking.trim() !== "" && (
                     <button 
                       onClick={() => {
@@ -500,20 +498,20 @@ export default function Home() {
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          Düşünme sürecini gizle
+                          Hide thinking process
                         </>
                       ) : (
                         <>
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
-                          Düşünme sürecini göster
+                          Show thinking process
                         </>
                       )}
                     </button>
                   )}
                   
-                  {/* İstatistik butonu */}
+                  {/* Statistics button */}
                   {message.stats && message.role === "assistant" && (
                     <button 
                       onClick={() => {
@@ -532,121 +530,70 @@ export default function Home() {
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          İstatistikleri gizle
+                          Hide statistics
                         </>
                       ) : (
                         <>
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
-                          İstatistikleri göster
+                          Show statistics
                         </>
                       )}
                     </button>
                   )}
                 </div>
                 
-                {/* Düşünme içeriği açıksa göster */}
+                {/* Show if thinking content is open */}
                 {message.thinking && message.thinking.trim() !== "" && openThinkingIndices.includes(index) && (
                   <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-600 rounded border-l-4 border-yellow-500">
-                    <div className="flex items-center mb-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">Düşünme Süreci</span>
-                      
-                      {message.stats && message.stats.thinkingTokens > 0 && (
-                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                          ({message.stats.thinkingTokens} token | {((message.stats.thinkingEndTime - message.stats.thinkingStartTime) / 1000).toFixed(2)} sn)
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap text-gray-600 dark:text-gray-300">{message.thinking}</p>
+                    <p className="text-xs font-semibold mb-1 text-gray-700 dark:text-gray-300">Thinking Process:</p>
+                    <pre className="text-xs whitespace-pre-wrap text-gray-600 dark:text-gray-400">{message.thinking}</pre>
                   </div>
                 )}
-                
-                {/* İstatistikler açıksa göster */}
-                {message.stats && message.role === "assistant" && openStatsIndices.includes(index) && (
+
+                {/* Show if statistics are open */}
+                {message.stats && openStatsIndices.includes(index) && (
                   <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-600 rounded border-l-4 border-green-500">
-                    <div className="flex items-center mb-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      <span className="text-xs font-medium text-green-600 dark:text-green-400">İstatistikler</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Toplam Token:</span>
-                        <span>{message.stats.totalTokens}</span>
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <span className="font-medium">Yanıt Token:</span>
-                        <span>{message.stats.responseTokens}</span>
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <span className="font-medium">Tok/sn:</span>
-                        <span>
-                          {message.stats.endTime && message.stats.startTime ? 
-                            (message.stats.totalTokens / ((message.stats.endTime - message.stats.startTime) / 1000)).toFixed(2) : 
-                            "N/A"}
-                        </span>
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <span className="font-medium">TTF:</span>
-                        <span>
-                          {message.stats.firstTokenTime && message.stats.startTime ? 
-                            ((message.stats.firstTokenTime - message.stats.startTime) / 1000).toFixed(2) + " sn" : 
-                            "N/A"}
-                        </span>
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <span className="font-medium">Toplam Süre:</span>
-                        <span>
-                          {message.stats.endTime && message.stats.startTime ? 
-                            ((message.stats.endTime - message.stats.startTime) / 1000).toFixed(2) + " sn" : 
-                            "N/A"}
-                        </span>
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <span className="font-medium">Duruş Nedeni:</span>
-                        <span>{message.stats.stopReason || "N/A"}</span>
-                      </div>
-                    </div>
+                    <p className="text-xs font-semibold mb-1 text-gray-700 dark:text-gray-300">Statistics:</p>
+                    <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
+                      {message.stats.thinkingStartTime > 0 && message.stats.thinkingEndTime > 0 && (
+                        <li>Thinking Time: {((message.stats.thinkingEndTime - message.stats.thinkingStartTime) / 1000).toFixed(2)} seconds</li>
+                      )}
+                      {message.stats.thinkingTokens > 0 && <li>Thinking Tokens: {message.stats.thinkingTokens}</li>}
+                      <li>Response Tokens: {message.stats.responseTokens}</li>
+                      <li>Total Tokens: {message.stats.totalTokens}</li>
+                      {message.stats.endTime > message.stats.firstTokenTime && message.stats.responseTokens > 1 && (
+                        <li>Token Speed: {((message.stats.responseTokens -1) / ((message.stats.endTime - message.stats.firstTokenTime) / 1000)).toFixed(2)} tokens/second</li>
+                      )}
+                      <li>Time to First Token: {((message.stats.firstTokenTime - message.stats.startTime) / 1000).toFixed(2)} seconds</li>
+                      <li>Total Duration: {((message.stats.endTime - message.stats.startTime) / 1000).toFixed(2)} seconds</li>
+                      {message.stats.stopReason && <li>Stop Reason: {message.stats.stopReason}</li>}
+                    </ul>
                   </div>
                 )}
               </div>
             ))
           )}
-          {isLoading && (
-            <div className="p-4 rounded-lg bg-gray-200 dark:bg-gray-700 mr-auto max-w-[80%]">
-              <p>Düşünüyor...</p>
-            </div>
-          )}
         </div>
       </main>
 
-      <footer className="bg-white dark:bg-gray-800 p-4 shadow-inner">
+      <footer className="p-4 bg-white dark:bg-gray-800 border-t dark:border-gray-700">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Bir mesaj yazın..."
+            placeholder="Type your message..."
             className="flex-1 p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            disabled={isLoading || !selectedModel}
+            disabled={isLoading || isLoadingModels || models.length === 0}
           />
           <button
             type="submit"
-            disabled={isLoading || !input.trim() || !selectedModel}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            disabled={isLoading || isLoadingModels || !input.trim() || models.length === 0}
           >
-            Gönder
+            Send
           </button>
         </form>
       </footer>

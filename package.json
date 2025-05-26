@@ -1,7 +1,8 @@
 {
-  "name": "lm-studio-chat",
+  "name": "chatboat",
   "version": "0.1.0",
   "private": true,
+  "description": "A universal chat interface for local AI model servers (OpenAI API compatible).",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
