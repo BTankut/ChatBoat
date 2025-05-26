@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LM Studio Chat
 
-## Getting Started
+A simple chat interface for interacting with LM Studio Server. This application allows you to select from available models and engage in conversations with streaming responses and detailed performance statistics.
 
-First, run the development server:
+## Features
+
+- **Model Selection**: Choose from available models in your LM Studio Server
+- **Streaming Responses**: Get real-time responses as they're generated
+- **Thinking Process**: View the model's thinking process with `<think>...</think>` tags
+- **Performance Statistics**: Monitor token counts, generation speed, and other metrics
+
+## Setup
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [LM Studio](https://lmstudio.ai/) with Server mode enabled
+
+### Installation
+
+1. Clone this repository
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Create a `.env.local` file in the root directory with your LM Studio Server URL:
+
+```
+LM_STUDIO_URL=http://your-lm-studio-server:1234
+```
+
+4. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Open [http://localhost:3000](http://localhost:3000) with your browser
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Ensure your LM Studio Server is running and serving models
+2. Select a model from the dropdown menu
+3. Type your message and send
+4. View the streaming response with statistics
 
-## Learn More
+## Statistics
 
-To learn more about Next.js, take a look at the following resources:
+The application provides detailed statistics for each response:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Thinking Process**: Duration and token count for the thinking phase
+- **Token Speed**: Tokens per second generation rate
+- **Total Tokens**: Count of all tokens in the response
+- **Time to First Token**: Latency before the first token appears
+- **Total Duration**: Complete response generation time
+- **Stop Reason**: Why the model stopped generating (e.g., EOS token)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Built With
 
-## Deploy on Vercel
+- [Next.js](https://nextjs.org/) - React framework
+- [Tailwind CSS](https://tailwindcss.com/) - Styling
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [LM Studio](https://lmstudio.ai/) for the local model server
