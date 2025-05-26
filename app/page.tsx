@@ -51,51 +51,62 @@ export default function Home() {
   // localStorage'dan sunucu URL'sini yükle ve modelleri getir
   useEffect(() => {
     const initializeApp = async () => {
-      // Önce localStorage'dan URL'yi al
-      let url = localStorage.getItem('lmStudioServerUrl');
-      if (!url) {
-        // Varsayılan URL
-        url = 'http://localhost:1234';
-        localStorage.setItem('lmStudioServerUrl', url);
-      }
+      let storedUrl = localStorage.getItem('lmStudioServerUrl');
       
-      // State'leri güncelle
-      setServerUrl(url);
-      setTempServerUrl(url);
-      
-      // Modelleri yükle
-      try {
-        setIsLoadingModels(true);
-        setModelError("");
-        
-        console.log('Modelleri yükleme isteği gönderiliyor, URL:', url);
-        
-        const response = await fetch("/api/models", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ serverUrl: url })
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `Model listesi alınamadı: ${response.status}`);
+      if (storedUrl && storedUrl.trim() !== "") { // A non-empty URL is stored, use it
+        setServerUrl(storedUrl);
+        setTempServerUrl(storedUrl); // Initialize temp URL for settings modal
+
+        try {
+          setIsLoadingModels(true);
+          setModelError("");
+          console.log('Modelleri yükleme isteği gönderiliyor, URL:', storedUrl);
+          
+          const response = await fetch("/api/models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ serverUrl: storedUrl })
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({})); // Handle non-JSON error response
+            let errorMessage = `Model listesi alınamadı (HTTP ${response.status})`;
+            if (response.status === 0 || response.status === 503 || response.status === 504) { // Common for network errors / server down
+                 errorMessage = `Sunucuya ulaşılamadı: ${storedUrl}. Lütfen sunucu adresini kontrol edin ve LM Studio'nun çalıştığından emin olun.`;
+            } else if (errorData.error) {
+                errorMessage = errorData.error;
+            } else if (typeof errorData === 'string') {
+                errorMessage = errorData;
+            }
+            throw new Error(errorMessage);
+          }
+          
+          const data = await response.json() as ModelsResponse;
+          if (data.data && data.data.length > 0) {
+            setModels(data.data);
+            setSelectedModel(data.data[0].id);
+          } else {
+            setModels([]);
+            setSelectedModel("");
+            setModelError("Sunucuda kullanılabilir model bulunamadı veya model listesi boş. Lütfen LM Studio sunucunuzu kontrol edin.");
+          }
+        } catch (error: any) {
+          console.error("Modeller yüklenirken hata:", error);
+          setModelError(error.message || "Modeller yüklenirken bilinmeyen bir hata oluştu. Sunucu adresini ve bağlantınızı kontrol edin.");
+          setModels([]);
+          setSelectedModel("");
+        } finally {
+          setIsLoadingModels(false);
         }
-        
-        const data = await response.json() as ModelsResponse;
-        setModels(data.data);
-        
-        // Eğer model varsa ilkini seç
-        if (data.data && data.data.length > 0) {
-          setSelectedModel(data.data[0].id);
-        }
-      } catch (error: any) {
-        console.error("Modeller yüklenirken hata:", error);
-        setModelError(error.message || "Modeller yüklenemedi");
+      } else { // No URL stored in localStorage or it's empty
+        setModelError("LM Studio sunucu adresi ayarlanmamış. Lütfen yukarıdaki dişli ikonuna tıklayarak ayarlayın.");
+        setServerUrl(""); 
+        setTempServerUrl("http://localhost:1234"); // Pre-fill settings modal with default
         setModels([]);
-      } finally {
+        setSelectedModel("");
         setIsLoadingModels(false);
+        // Optionally open settings modal automatically on first load without URL
+        // setIsSettingsOpen(true); // Consider UX for this. A message might be less intrusive.
       }
     };
 
