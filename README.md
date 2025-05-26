@@ -18,26 +18,43 @@ A simple chat interface for interacting with LM Studio Server. This application 
 
 ### Installation
 
-1. Clone this repository
+1. Clone this repository:
+
+```bash
+git clone https://github.com/BTankut/lm-studio-chat.git
+cd lm-studio-chat
+```
+
 2. Install dependencies:
 
 ```bash
 npm install
 ```
 
-3. Create a `.env.local` file in the root directory with your LM Studio Server URL:
-
-```
-LM_STUDIO_URL=http://your-lm-studio-server:1234
-```
-
-4. Start the development server:
+3. Start the development server:
 
 ```bash
 npm run dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000) with your browser
+4. Open [http://localhost:3000](http://localhost:3000) with your browser
+
+### Cross-Platform Support
+
+This application works on both Windows and macOS:
+
+- **Windows**: Follow the installation steps above
+- **macOS**: Follow the same steps, ensuring LM Studio for Mac is running in server mode
+
+### Server Configuration
+
+The application includes a settings modal to configure the LM Studio Server URL:
+
+1. Click the settings icon in the header
+2. Enter your LM Studio Server URL (default is `http://localhost:1234`)
+3. Click Save
+
+This allows you to use the application in different environments (home, office, etc.) without modifying the code.
 
 ## Usage
 
