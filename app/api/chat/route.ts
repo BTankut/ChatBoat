@@ -43,8 +43,11 @@ async function getAvailableModels(lmStudioUrl: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    // İstek gövdesinden mesajları, seçilen modeli ve sunucu URL'sini al
-    const { messages, selectedModel, serverUrl } = await request.json();
+    // İstek gövdesinden mesajları, seçilen modeli, sunucu URL'sini ve thinking özelliği tercihini al
+    const { messages, selectedModel, serverUrl, enableThinking } = await request.json();
+    
+    // Thinking özelliği tercihini konsola yazdır
+    console.log(`Thinking modu: ${enableThinking === true ? 'AÇİK' : 'KAPALI'}`);
 
     // Mesajları kontrol et
     if (!messages || !Array.isArray(messages)) {
@@ -83,13 +86,33 @@ export async function POST(request: Request) {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer lm-studio'
           },
-          body: JSON.stringify({
-            model: selectedModel, // Kullanıcının seçtiği modeli kullan
-            messages: messages,
-            temperature: 0.7,
-            max_tokens: 2000,
-            stream: true // Streaming yanıt için true olarak ayarla
-          })
+          body: JSON.stringify(
+            enableThinking === true
+              ? {
+                  // Thinking modu açıksa
+                  model: selectedModel,
+                  messages: messages,
+                  temperature: 0.6, // Thinking mode için önerilen
+                  top_p: 0.95,
+                  top_k: 20,
+                  min_p: 0,
+                  max_tokens: 2000,
+                  stream: true,
+                  thinking: true // Önemli: Thinking parametresi açık
+                }
+              : {
+                  // Thinking modu kapalıysa
+                  model: selectedModel,
+                  messages: messages,
+                  temperature: 0.7, // Non-thinking mode için önerilen
+                  top_p: 0.8,
+                  top_k: 20,
+                  min_p: 0,
+                  max_tokens: 2000,
+                  stream: true
+                  // thinking parametresi yok - bu önemli
+                }
+          )
         });
 
         if (!response.ok) {
@@ -113,6 +136,7 @@ export async function POST(request: Request) {
         let isInsideThinkingBlock = false;
         let buffer = '';
         let completeResponse = '';
+        let isControllerClosed = false;
         
         // İstatistikler için değişkenler
         const stats = {
@@ -136,12 +160,19 @@ export async function POST(request: Request) {
               stats.endTime = Date.now();
               
               // Son istatistikleri gönder
-              controller.enqueue(encoder.encode(JSON.stringify({
-                content: "",
-                isThinking: false,
-                stats,
-                completed: true
-              }) + '\n'));
+              if (!isControllerClosed) {
+                try {
+                  controller.enqueue(encoder.encode(JSON.stringify({
+                    content: "",
+                    isThinking: false,
+                    stats,
+                    completed: true
+                  }) + '\n'));
+                } catch (error) {
+                  console.error('Controller enqueue hatası (tamamlandı):', error);
+                  isControllerClosed = true;
+                }
+              }
               
               break;
             }
@@ -211,13 +242,23 @@ export async function POST(request: Request) {
                     // Frontend'e gönderilecek içeriği temizle
                     const cleanedContent = contentChunk.replace(/<think>|<\/think>/g, '');
                     
-                    // İstatistikleri ve içeriği gönder
-                    controller.enqueue(encoder.encode(JSON.stringify({
-                      content: cleanedContent,
-                      isThinking: chunkIsCurrentlyConsideredThinking, // Bu chunk'ın düşünme durumu
-                      stats,
-                      completed: false
-                    }) + '\n'));
+                    // Thinking modu kapalıysa ve bu chunk thinking içeriği ise, frontend'e gönderme
+                    if (enableThinking === false && chunkIsCurrentlyConsideredThinking) {
+                      // Thinking içeriğini sessizce atla
+                    } else if (!isControllerClosed) {
+                      try {
+                        // İstatistikleri ve içeriği gönder
+                        controller.enqueue(encoder.encode(JSON.stringify({
+                          content: cleanedContent,
+                          isThinking: chunkIsCurrentlyConsideredThinking, // Bu chunk'ın düşünme durumu
+                          stats,
+                          completed: false
+                        }) + '\n'));
+                      } catch (error) {
+                        console.error('Controller enqueue hatası:', error);
+                        isControllerClosed = true;
+                      }
+                    }
                   }
                 } catch (e) {
                   console.error('JSON parse hatası:', e);
@@ -227,10 +268,23 @@ export async function POST(request: Request) {
           }
         } catch (error) {
           console.error('Stream okuma hatası:', error);
-          controller.error(error);
+          if (!isControllerClosed) {
+            try {
+              controller.error(error);
+            } catch (e) {
+              console.error('Controller error hatası:', e);
+            }
+          }
         } finally {
           reader.releaseLock();
-          controller.close();
+          if (!isControllerClosed) {
+            try {
+              controller.close();
+              isControllerClosed = true;
+            } catch (e) {
+              console.error('Controller close hatası:', e);
+            }
+          }
         }
       }
     });
